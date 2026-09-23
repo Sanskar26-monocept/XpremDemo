@@ -1,4 +1,4 @@
-package com.xpremdemo
+package com.sanskar_26.XpremDemo
 
 import android.app.Application
 import android.content.res.Configuration
