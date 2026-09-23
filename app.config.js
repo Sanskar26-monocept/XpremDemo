@@ -1,6 +1,11 @@
 export default ({ config }) => ({
   ...config,
   runtimeVersion: "1.0.0",
+  plugins: [
+    ...(config.plugins ?? []),
+    // Update server is plain http; release builds block cleartext by default.
+    ["expo-build-properties", { android: { usesCleartextTraffic: true } }],
+  ],
   updates: {
     url: "http://13.207.184.23:3000/manifest",
     codeSigningMetadata: process.env.DISABLE_CODE_SIGNING
