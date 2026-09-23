@@ -1,6 +1,11 @@
 export default ({ config }) => ({
   ...config,
   runtimeVersion: "1.0.0",
+  extra: {
+    ...config.extra,
+    // Bump before every `eoas publish` so the running OTA release is identifiable in the app.
+    otaVersion: 1,
+  },
   plugins: [
     ...(config.plugins ?? []),
     // Update server is plain http; release builds block cleartext by default.
