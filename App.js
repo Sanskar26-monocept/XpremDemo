@@ -4,7 +4,7 @@ import { StyleSheet, Text, View } from "react-native";
 export default function App() {
   return (
     <View style={styles.container}>
-      <Text>OTA UPDATES WITH XPREM.</Text>
+      <Text>OTA TEST 2</Text>
       <StatusBar style="auto" />
     </View>
   );
