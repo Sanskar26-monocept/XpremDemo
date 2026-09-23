@@ -51,13 +51,15 @@ export default function App() {
     }
   }
 
-  const source = currentlyRunning.isEmbeddedLaunch ? "Embedded build" : "OTA update";
+  const source = currentlyRunning.isEmbeddedLaunch
+    ? "Embedded build"
+    : "OTA update";
   const updateId = currentlyRunning.updateId?.slice(0, 8) ?? "-";
   const publishedAt = currentlyRunning.createdAt?.toLocaleString() ?? "-";
 
   return (
     <View style={styles.container}>
-      <Text style={styles.title}>OTA TEST 3</Text>
+      <Text style={styles.title}>OTA TEST 4</Text>
 
       <View style={styles.card}>
         <Text style={styles.version}>
