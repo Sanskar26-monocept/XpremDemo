@@ -31,6 +31,8 @@ yarn-error.*
 
 # local env files
 .env*.local
+# xprem API token used by scripts/build-apk.js
+.env.xprem
 
 # typescript
 *.tsbuildinfo
