@@ -15,6 +15,7 @@
  */
 const { spawnSync } = require('child_process');
 const fs = require('fs');
+const os = require('os');
 const path = require('path');
 
 const projectRoot = path.join(__dirname, '..');
@@ -102,6 +103,28 @@ function git(args) {
   return result.status === 0 ? result.stdout.trim() : undefined;
 }
 
+// The Expo SDK the app builds against, from the installed expo package.
+function expoSdkVersion() {
+  try {
+    return require(path.join(projectRoot, 'node_modules', 'expo', 'package.json')).version;
+  } catch {
+    return undefined;
+  }
+}
+
+// The machine that ran the build, as the dashboard shows it ("Windows x64").
+function buildHost() {
+  const names = { win32: 'Windows', darwin: 'macOS', linux: 'Linux' };
+  return `${names[process.platform] || process.platform} ${os.arch()}`;
+}
+
+// Whether the working tree has uncommitted changes, so the dashboard can mark
+// the commit the way EAS does (5e10bf1*). Unknown outside a git checkout.
+function gitDirty() {
+  const status = git(['status', '--porcelain']);
+  return status === undefined ? undefined : String(status !== '');
+}
+
 async function upload(uploadUrl, apkPath, token) {
   const apk = fs.readFileSync(apkPath);
   console.log(`\n📤 Uploading ${path.basename(apkPath)} (${(apk.length / 1048576).toFixed(1)} MB)...`);
@@ -165,6 +188,13 @@ async function main() {
     versionCode: config.android?.versionCode?.toString(),
     message: message?.slice(0, 255),
     commitHash: git(['rev-parse', 'HEAD']),
+    // Everything below is shown on the build's page in the dashboard.
+    buildProfile: 'release',
+    gitBranch: (b => (b === 'HEAD' ? undefined : b))(git(['rev-parse', '--abbrev-ref', 'HEAD'])),
+    gitDirty: gitDirty(),
+    sdkVersion: expoSdkVersion(),
+    cliVersion: `build-apk.js (Node ${process.versions.node})`,
+    buildHost: buildHost(),
   };
   for (const [key, value] of Object.entries(metadata)) {
     if (value) params.set(key, value);
@@ -190,11 +220,14 @@ async function main() {
   }
 
   if (!skipBuild) {
+    const buildStart = Date.now();
     if (prebuild) {
       // SDK 57 prebuild recreates android/ from app.json and the config plugins.
       run('npx expo prebuild --platform android --no-install', projectRoot, env);
     }
     run(`${process.platform === 'win32' ? 'gradlew.bat' : './gradlew'} assembleRelease`, androidDir, env);
+    // With --skip-build nothing was built here, so no build time is sent.
+    params.set('buildDurationMs', String(Date.now() - buildStart));
   }
 
   const apkPath = findApk();
