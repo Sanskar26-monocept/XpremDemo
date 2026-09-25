@@ -4,7 +4,7 @@ export default ({ config }) => ({
   extra: {
     ...config.extra,
     // Bump before every `eoas publish` so the running OTA release is identifiable in the app.
-    otaVersion: 3,
+    otaVersion: 4,
   },
   plugins: [
     ...(config.plugins ?? []),
