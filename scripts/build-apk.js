@@ -125,6 +125,52 @@ function gitDirty() {
   return status === undefined ? undefined : String(status !== '');
 }
 
+// The files of the project the build was made from, the way git sees it:
+// tracked files plus untracked ones that are not ignored, so node_modules and
+// build output stay out. Paths only; the dashboard lists them on the build's
+// page. Undefined outside a git checkout.
+function projectFiles() {
+  const result = spawnSync('git', ['ls-files', '-z', '--cached', '--others', '--exclude-standard'], {
+    cwd: projectRoot,
+    encoding: 'utf8',
+    maxBuffer: 64 << 20,
+  });
+  if (result.status !== 0) return undefined;
+  // --cached still names files deleted from the working tree.
+  const files = [...new Set(result.stdout.split('\0').filter(Boolean))].filter(file =>
+    fs.existsSync(path.join(projectRoot, file))
+  );
+  return files.slice(0, 50000);
+}
+
+// Sent after the upload, so a failure here never costs the build itself.
+async function sendProjectFiles(serverUrl, appId, channel, buildId, token) {
+  const files = projectFiles();
+  if (!files) {
+    console.log('   Project files not listed: this is not a git checkout.');
+    return;
+  }
+  try {
+    const response = await fetch(
+      `${serverUrl}/${appId}/uploadBuild/${encodeURIComponent(channel)}/${buildId}/projectFiles`,
+      {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ files }),
+      }
+    );
+    if (response.status === 404 || response.status === 405) {
+      console.log('   Project files not listed: the server does not support it yet.');
+    } else if (!response.ok) {
+      console.log(`   Project files not listed: the server answered ${response.status}.`);
+    } else {
+      console.log(`📂 Project files listed on the build's page: ${files.length}`);
+    }
+  } catch (error) {
+    console.log(`   Project files not listed: ${error.cause?.message || error.message}`);
+  }
+}
+
 async function upload(uploadUrl, apkPath, token) {
   const apk = fs.readFileSync(apkPath);
   console.log(`\n📤 Uploading ${path.basename(apkPath)} (${(apk.length / 1048576).toFixed(1)} MB)...`);
@@ -238,6 +284,7 @@ async function main() {
 
   const uploadUrl = `${serverUrl}/${appId}/uploadBuild/${encodeURIComponent(channel)}?${params}`;
   const build = await upload(uploadUrl, apkPath, env.EOO_TOKEN);
+  await sendProjectFiles(serverUrl, appId, channel, build.id, env.EOO_TOKEN);
 
   console.log('\n✅ Build uploaded');
   console.log(`📱 Install link (share it with testers): ${build.shareUrl}`);
