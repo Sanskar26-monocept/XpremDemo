@@ -209,7 +209,11 @@ async function main() {
   console.log('\n✅ Build uploaded');
   console.log(`📱 Install link (share it with testers): ${build.shareUrl}`);
   console.log(`⬇️  Direct APK download:                 ${build.downloadUrl}`);
-  console.log('   Anyone with the link can install it. Delete the build in the dashboard (Builds) to revoke the link.');
+  // Servers from before build expiry send no expiresAt.
+  if (build.expiresAt) {
+    console.log(`⏳ Link expires:                        ${new Date(build.expiresAt).toLocaleString()}`);
+  }
+  console.log('   Anyone with the link can install it until it expires. Delete the build in the dashboard (Builds) to revoke the link sooner.');
 }
 
 main();
