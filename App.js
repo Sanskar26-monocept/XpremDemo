@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { StatusBar } from "expo-status-bar";
 import {
   ActivityIndicator,
@@ -9,6 +9,7 @@ import {
 } from "react-native";
 import Constants from "expo-constants";
 import * as Updates from "expo-updates";
+import { Observe, useObserve } from "expo-observe";
 
 // expoConfig comes from the running update's manifest, so otaVersion reflects
 // the OTA release actually loaded (or the embedded one on first install).
@@ -20,7 +21,35 @@ export default function App() {
   const [status, setStatus] = useState("idle"); // idle | checking | downloading | upToDate | error
   const [message, setMessage] = useState("");
 
+  const { markInteractive } = useObserve();
+  const [sending, setSending] = useState(false);
+
   const busy = status === "checking" || status === "downloading";
+
+  // The screen is usable as soon as it renders: that moment is the app's
+  // time to interactive on the Metrics page.
+  useEffect(() => {
+    markInteractive();
+    Observe.logEvent("app_opened", {
+      attributes: { otaVersion, source: currentlyRunning.isEmbeddedLaunch ? "embedded" : "ota" },
+    });
+  }, []);
+
+  // expo-observe sends on its own when the app goes to the background; this
+  // sends right away, handy when checking the Events page.
+  async function onSendPress() {
+    setSending(true);
+    try {
+      Observe.logEvent("telemetry_sent_manually");
+      await Observe.dispatchEvents();
+      setMessage("Telemetry sent.");
+    } catch (e) {
+      Observe.reportError(e);
+      setMessage(e?.message ?? String(e));
+    } finally {
+      setSending(false);
+    }
+  }
 
   async function onUpdatePress() {
     if (!Updates.isEnabled) {
@@ -32,6 +61,9 @@ export default function App() {
       setStatus("checking");
       setMessage("");
       const check = await Updates.checkForUpdateAsync();
+      Observe.logEvent("update_checked", {
+        attributes: { available: check.isAvailable },
+      });
       if (!check.isAvailable) {
         setStatus("upToDate");
         setMessage("You're on the latest version.");
@@ -46,6 +78,7 @@ export default function App() {
         setMessage("You're on the latest version.");
       }
     } catch (e) {
+      Observe.reportError(e);
       setStatus("error");
       setMessage(e?.message ?? String(e));
     }
@@ -90,6 +123,16 @@ export default function App() {
         ) : (
           <Text style={styles.buttonText}>Check for update</Text>
         )}
+      </Pressable>
+
+      <Pressable
+        style={({ pressed }) => [styles.secondaryButton, (pressed || sending) && styles.buttonDim]}
+        onPress={onSendPress}
+        disabled={sending}
+      >
+        <Text style={styles.secondaryButtonText}>
+          {sending ? "Sending…" : "Send telemetry now"}
+        </Text>
       </Pressable>
 
       {message ? (
@@ -166,6 +209,21 @@ const styles = StyleSheet.create({
   },
   buttonText: {
     color: "#fff",
+    fontSize: 16,
+    fontWeight: "600",
+  },
+  secondaryButton: {
+    marginTop: 12,
+    paddingVertical: 12,
+    paddingHorizontal: 28,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: "#2f6fed",
+    minWidth: 220,
+    alignItems: "center",
+  },
+  secondaryButtonText: {
+    color: "#2f6fed",
     fontSize: 16,
     fontWeight: "600",
   },
