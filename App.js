@@ -17,7 +17,7 @@ const appVersion = Constants.expoConfig?.version ?? "unknown";
 const otaVersion = Constants.expoConfig?.extra?.otaVersion ?? 0;
 
 export default function App() {
-  const { currentlyRunning } = Updates.useUpdates();
+  const { currentlyRunning, isUpdatePending } = Updates.useUpdates();
   const [status, setStatus] = useState("idle"); // idle | checking | downloading | upToDate | error
   const [message, setMessage] = useState("");
 
@@ -34,6 +34,16 @@ export default function App() {
       attributes: { otaVersion, source: currentlyRunning.isEmbeddedLaunch ? "embedded" : "ota" },
     });
   }, []);
+
+  // Safety net for the launch wait in app.config.js: when it ran out before
+  // the latest update arrived (slow network), the update keeps downloading in
+  // the background. Restart into it as soon as it is ready, so nobody stays on
+  // the UI bundled into an older APK.
+  useEffect(() => {
+    if (isUpdatePending) {
+      Updates.reloadAsync().catch(error => Observe.reportError(error));
+    }
+  }, [isUpdatePending]);
 
   // expo-observe sends on its own when the app goes to the background; this
   // sends right away, handy when checking the Events page.

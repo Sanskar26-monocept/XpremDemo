@@ -25,6 +25,13 @@ export default ({ config }) => ({
   ],
   updates: {
     url: `${SERVER_URL}/manifest`,
+    // Check on every launch and wait up to 10 s for the latest update before
+    // showing anything, so a fresh install from a shared APK opens on the
+    // current UI instead of the one bundled when the APK was built. Past the
+    // wait (slow or no network) the bundled UI starts and App.js reloads into
+    // the update once it has downloaded.
+    checkAutomatically: "ON_LOAD",
+    fallbackToCacheTimeout: 10000,
     codeSigningMetadata: process.env.DISABLE_CODE_SIGNING
       ? undefined
       : { keyid: "main", alg: "rsa-v1_5-sha256" },
