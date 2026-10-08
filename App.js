@@ -105,7 +105,7 @@ export default function App() {
 
   return (
     <View style={styles.container}>
-      <Text style={styles.title}>OTA TEST 9</Text>
+      <Text style={styles.title}>OTA TEST 10</Text>
 
       <View style={styles.card}>
         <Text style={styles.version}>
