@@ -2,10 +2,12 @@ import { useEffect, useState } from "react";
 import { StatusBar } from "expo-status-bar";
 import {
   ActivityIndicator,
+  Button,
   Pressable,
   StyleSheet,
   Text,
   View,
+  Alert,
 } from "react-native";
 import Constants from "expo-constants";
 import * as Updates from "expo-updates";
@@ -111,6 +113,10 @@ export default function App() {
         <Text style={styles.version}>
           v{appVersion} (OTA {otaVersion})
         </Text>
+        <Button
+          title="Send telemetry now"
+          onPress={() => Alert.alert("Telemetry sent!")}
+        ></Button>
         <Row label="Runtime" value={currentlyRunning.runtimeVersion ?? "-"} />
         <Row label="Channel" value={currentlyRunning.channel ?? "-"} />
         <Row label="Source" value={source} />
