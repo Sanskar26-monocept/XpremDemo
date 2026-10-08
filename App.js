@@ -31,7 +31,10 @@ export default function App() {
   useEffect(() => {
     markInteractive();
     Observe.logEvent("app_opened", {
-      attributes: { otaVersion, source: currentlyRunning.isEmbeddedLaunch ? "embedded" : "ota" },
+      attributes: {
+        otaVersion,
+        source: currentlyRunning.isEmbeddedLaunch ? "embedded" : "ota",
+      },
     });
   }, []);
 
@@ -41,7 +44,7 @@ export default function App() {
   // the UI bundled into an older APK.
   useEffect(() => {
     if (isUpdatePending) {
-      Updates.reloadAsync().catch(error => Observe.reportError(error));
+      Updates.reloadAsync().catch((error) => Observe.reportError(error));
     }
   }, [isUpdatePending]);
 
@@ -102,7 +105,7 @@ export default function App() {
 
   return (
     <View style={styles.container}>
-      <Text style={styles.title}>OTA TEST 6</Text>
+      <Text style={styles.title}>OTA TEST 9</Text>
 
       <View style={styles.card}>
         <Text style={styles.version}>
@@ -136,7 +139,10 @@ export default function App() {
       </Pressable>
 
       <Pressable
-        style={({ pressed }) => [styles.secondaryButton, (pressed || sending) && styles.buttonDim]}
+        style={({ pressed }) => [
+          styles.secondaryButton,
+          (pressed || sending) && styles.buttonDim,
+        ]}
         onPress={onSendPress}
         disabled={sending}
       >
