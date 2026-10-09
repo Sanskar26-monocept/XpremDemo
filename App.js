@@ -56,7 +56,7 @@ export default function App() {
   const toastShown = useRef(false);
   useEffect(() => {
     console.log(
-      `[update-toast] restartCount=${restartCount} ota=${otaVersion} embedded=${currentlyRunning.isEmbeddedLaunch}`
+      `[update-toast] restartCount=${restartCount} ota=${otaVersion} embedded=${currentlyRunning.isEmbeddedLaunch}`,
     );
     if (restartCount > 0 && !toastShown.current) {
       toastShown.current = true;
@@ -151,7 +151,7 @@ export default function App() {
 
   return (
     <View style={styles.container}>
-      <Text style={styles.title}>OTA TEST 17</Text>
+      <Text style={styles.title}>OTA TEST 24</Text>
 
       <View style={styles.card}>
         <Text style={styles.version}>
