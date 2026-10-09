@@ -1,0 +1,66 @@
+name: Build APK
+
+# Builds a release APK on a GitHub runner and uploads it to the xprem server
+# (scripts/build-apk.js). The build then shows under Builds in the dashboard.
+#
+# Repository secrets:
+#   EOO_TOKEN            API token of the app (dashboard -> API tokens)
+#   CODE_SIGNING_CERT    contents of certs/certificate.pem (the PUBLIC certificate;
+#                        the file is git-ignored, so CI recreates it from here)
+
+on:
+  workflow_dispatch:
+    inputs:
+      channel:
+        description: Release channel baked into the APK
+        default: production
+      note:
+        description: Note shown on the install page
+        default: ""
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - uses: android-actions/setup-android@v3
+
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: gradle-${{ runner.os }}-${{ hashFiles('android/**/*.gradle*', 'android/gradle/wrapper/gradle-wrapper.properties') }}
+          restore-keys: gradle-${{ runner.os }}-
+
+      - run: npm ci
+
+      - name: Restore the code-signing certificate
+        env:
+          CODE_SIGNING_CERT: ${{ secrets.CODE_SIGNING_CERT }}
+        run: |
+          mkdir -p certs
+          printf '%s\n' "$CODE_SIGNING_CERT" > certs/certificate.pem
+          test -s certs/certificate.pem
+
+      # git tracks android/gradlew without the executable bit.
+      - run: chmod +x android/gradlew
+
+      - name: Build and upload
+        env:
+          EOO_TOKEN: ${{ secrets.EOO_TOKEN }}
+          NOTE: ${{ inputs.note }}
+        run: |
+          npm run build:apk -- --channel "${{ inputs.channel }}" -m "${NOTE:-CI build ${GITHUB_SHA::7}}"
