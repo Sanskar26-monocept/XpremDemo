@@ -10,7 +10,7 @@ export default ({ config }) => ({
   extra: {
     ...config.extra,
     // Bump before every `eoas publish` so the running OTA release is identifiable in the app.
-    otaVersion: 16,
+    otaVersion: 17,
     eas: {
       ...config.extra?.eas,
       projectId: APP_ID,
