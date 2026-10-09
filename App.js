@@ -1,7 +1,8 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { StatusBar } from "expo-status-bar";
 import {
   ActivityIndicator,
+  Animated,
   Button,
   Pressable,
   StyleSheet,
@@ -22,6 +23,8 @@ export default function App() {
   const { currentlyRunning, isUpdatePending } = Updates.useUpdates();
   const [status, setStatus] = useState("idle"); // idle | checking | downloading | upToDate | error
   const [message, setMessage] = useState("");
+  const [toast, setToast] = useState("");
+  const toastOpacity = useRef(new Animated.Value(0)).current;
 
   const { markInteractive } = useObserve();
   const [sending, setSending] = useState(false);
@@ -39,6 +42,36 @@ export default function App() {
       },
     });
   }, []);
+
+  // Toast on the first launch after an OTA update. expo-updates extra params
+  // persist across launches without a native storage module, so the id of the
+  // update last shown is kept there. A missing value (first run of this code)
+  // is recorded silently so nobody gets a toast for an update they did not see.
+  useEffect(() => {
+    const runningId = currentlyRunning.updateId;
+    if (!Updates.isEnabled || !runningId) return;
+    (async () => {
+      try {
+        const { lastSeenUpdateId } = await Updates.getExtraParamsAsync();
+        if (lastSeenUpdateId === runningId) return;
+        await Updates.setExtraParamAsync("lastSeenUpdateId", runningId);
+        if (lastSeenUpdateId && !currentlyRunning.isEmbeddedLaunch) {
+          showToast(`App updated to OTA ${otaVersion}`);
+        }
+      } catch (error) {
+        Observe.reportError(error);
+      }
+    })();
+  }, []);
+
+  function showToast(text) {
+    setToast(text);
+    Animated.sequence([
+      Animated.timing(toastOpacity, { toValue: 1, duration: 250, useNativeDriver: true }),
+      Animated.delay(3500),
+      Animated.timing(toastOpacity, { toValue: 0, duration: 400, useNativeDriver: true }),
+    ]).start(() => setToast(""));
+  }
 
   // Safety net for the launch wait in app.config.js: when it ran out before
   // the latest update arrived (slow network), the update keeps downloading in
@@ -163,6 +196,12 @@ export default function App() {
         </Text>
       ) : null}
 
+      {toast ? (
+        <Animated.View style={[styles.toast, { opacity: toastOpacity }]}>
+          <Text style={styles.toastText}>{toast}</Text>
+        </Animated.View>
+      ) : null}
+
       <StatusBar style="auto" />
     </View>
   );
@@ -256,5 +295,21 @@ const styles = StyleSheet.create({
   },
   error: {
     color: "#c62828",
+  },
+  toast: {
+    position: "absolute",
+    bottom: 60,
+    left: 24,
+    right: 24,
+    backgroundColor: "#323232",
+    borderRadius: 10,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    alignItems: "center",
+  },
+  toastText: {
+    color: "#fff",
+    fontSize: 15,
+    fontWeight: "500",
   },
 });
