@@ -67,9 +67,17 @@ export default function App() {
   function showToast(text) {
     setToast(text);
     Animated.sequence([
-      Animated.timing(toastOpacity, { toValue: 1, duration: 250, useNativeDriver: true }),
+      Animated.timing(toastOpacity, {
+        toValue: 1,
+        duration: 250,
+        useNativeDriver: true,
+      }),
       Animated.delay(3500),
-      Animated.timing(toastOpacity, { toValue: 0, duration: 400, useNativeDriver: true }),
+      Animated.timing(toastOpacity, {
+        toValue: 0,
+        duration: 400,
+        useNativeDriver: true,
+      }),
     ]).start(() => setToast(""));
   }
 
@@ -140,7 +148,7 @@ export default function App() {
 
   return (
     <View style={styles.container}>
-      <Text style={styles.title}>OTA TEST 14</Text>
+      <Text style={styles.title}>OTA TEST 16</Text>
 
       <View style={styles.card}>
         <Text style={styles.version}>
