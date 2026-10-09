@@ -20,7 +20,8 @@ const appVersion = Constants.expoConfig?.version ?? "unknown";
 const otaVersion = Constants.expoConfig?.extra?.otaVersion ?? 0;
 
 export default function App() {
-  const { currentlyRunning, isUpdatePending } = Updates.useUpdates();
+  const { currentlyRunning, isUpdatePending, restartCount } =
+    Updates.useUpdates();
   const [status, setStatus] = useState("idle"); // idle | checking | downloading | upToDate | error
   const [message, setMessage] = useState("");
   const [toast, setToast] = useState("");
@@ -41,35 +42,27 @@ export default function App() {
         source: currentlyRunning.isEmbeddedLaunch ? "embedded" : "ota",
       },
     });
+    // Send right away instead of waiting for the library's own flush.
+    Observe.dispatchEvents().catch((error) => Observe.reportError(error));
   }, []);
 
-  // Toast on the first launch after an OTA update. expo-updates extra params
-  // persist across launches without a native storage module, so the id of the
-  // update last shown is kept there. A missing value (first run of this code)
-  // is recorded silently so nobody gets a toast for an update they did not see.
+  // Toast when this JS instance is the one that came up after reloading into a
+  // freshly downloaded update. restartCount is kept natively across the JS
+  // reload, so it is 0 on a plain cold start and 1+ only in the instance that
+  // the reload produced. Nothing is persisted and nothing depends on the code
+  // of the update being replaced, which a stored "last seen id" cannot avoid:
+  // the pre-reload instance still runs the *old* bundle, so any such marker is
+  // written by whatever logic shipped in the previous update.
+  const toastShown = useRef(false);
   useEffect(() => {
-    const runningId = currentlyRunning.updateId;
-    if (!Updates.isEnabled || !runningId) return;
-    (async () => {
-      try {
-        // Extra param keys are structured-field keys: lowercase only.
-        const params = await Updates.getExtraParamsAsync();
-        const lastSeenUpdateId = params["last-seen-update-id"];
-        console.log(
-          `[update-toast] running=${runningId} lastSeen=${lastSeenUpdateId} embedded=${currentlyRunning.isEmbeddedLaunch}`
-        );
-        if (lastSeenUpdateId === runningId) return;
-        await Updates.setExtraParamAsync("last-seen-update-id", runningId);
-        if (lastSeenUpdateId && !currentlyRunning.isEmbeddedLaunch) {
-          console.log("[update-toast] showing toast");
-          showToast(`App updated to OTA ${otaVersion}`);
-        }
-      } catch (error) {
-        console.log(`[update-toast] failed: ${error?.message ?? error}`);
-        Observe.reportError(error);
-      }
-    })();
-  }, []);
+    console.log(
+      `[update-toast] restartCount=${restartCount} ota=${otaVersion} embedded=${currentlyRunning.isEmbeddedLaunch}`
+    );
+    if (restartCount > 0 && !toastShown.current) {
+      toastShown.current = true;
+      showToast(`App updated to OTA ${otaVersion}`);
+    }
+  }, [restartCount]);
 
   // The toast view stays mounted (opacity 0 while hidden) so the fade never
   // starts on a view that has not been laid out yet.
@@ -129,6 +122,7 @@ export default function App() {
       Observe.logEvent("update_checked", {
         attributes: { available: check.isAvailable },
       });
+      Observe.dispatchEvents().catch((error) => Observe.reportError(error));
       if (!check.isAvailable) {
         setStatus("upToDate");
         setMessage("You're on the latest version.");
