@@ -52,33 +52,42 @@ export default function App() {
     if (!Updates.isEnabled || !runningId) return;
     (async () => {
       try {
-        const { lastSeenUpdateId } = await Updates.getExtraParamsAsync();
+        // Extra param keys are structured-field keys: lowercase only.
+        const params = await Updates.getExtraParamsAsync();
+        const lastSeenUpdateId = params["last-seen-update-id"];
+        console.log(
+          `[update-toast] running=${runningId} lastSeen=${lastSeenUpdateId} embedded=${currentlyRunning.isEmbeddedLaunch}`
+        );
         if (lastSeenUpdateId === runningId) return;
-        await Updates.setExtraParamAsync("lastSeenUpdateId", runningId);
+        await Updates.setExtraParamAsync("last-seen-update-id", runningId);
         if (lastSeenUpdateId && !currentlyRunning.isEmbeddedLaunch) {
+          console.log("[update-toast] showing toast");
           showToast(`App updated to OTA ${otaVersion}`);
         }
       } catch (error) {
+        console.log(`[update-toast] failed: ${error?.message ?? error}`);
         Observe.reportError(error);
       }
     })();
   }, []);
 
+  // The toast view stays mounted (opacity 0 while hidden) so the fade never
+  // starts on a view that has not been laid out yet.
   function showToast(text) {
     setToast(text);
     Animated.sequence([
       Animated.timing(toastOpacity, {
         toValue: 1,
         duration: 250,
-        useNativeDriver: true,
+        useNativeDriver: false,
       }),
-      Animated.delay(3500),
+      Animated.delay(4000),
       Animated.timing(toastOpacity, {
         toValue: 0,
         duration: 400,
-        useNativeDriver: true,
+        useNativeDriver: false,
       }),
-    ]).start(() => setToast(""));
+    ]).start();
   }
 
   // Safety net for the launch wait in app.config.js: when it ran out before
@@ -204,11 +213,12 @@ export default function App() {
         </Text>
       ) : null}
 
-      {toast ? (
-        <Animated.View style={[styles.toast, { opacity: toastOpacity }]}>
-          <Text style={styles.toastText}>{toast}</Text>
-        </Animated.View>
-      ) : null}
+      <Animated.View
+        pointerEvents="none"
+        style={[styles.toast, { opacity: toastOpacity }]}
+      >
+        <Text style={styles.toastText}>{toast}</Text>
+      </Animated.View>
 
       <StatusBar style="auto" />
     </View>
