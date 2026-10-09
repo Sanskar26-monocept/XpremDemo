@@ -26,6 +26,8 @@ export default function App() {
   const [message, setMessage] = useState("");
   const [toast, setToast] = useState("");
   const toastOpacity = useRef(new Animated.Value(0)).current;
+  // Result popup of "Check for update": { title, details? } or null.
+  const [popup, setPopup] = useState(null);
 
   const { markInteractive } = useObserve();
   const [sending, setSending] = useState(false);
@@ -109,10 +111,33 @@ export default function App() {
     }
   }
 
+  // The popup the update check ends in. Details describe what is running now.
+  function showPopup(title, withDetails = true) {
+    setPopup({
+      title,
+      details: withDetails
+        ? [
+            `Current version: ${appVersion} (OTA ${otaVersion})`,
+            `Runtime: ${currentlyRunning.runtimeVersion ?? "-"}`,
+            `Current update ID: ${currentlyRunning.updateId ?? "-"}`,
+          ]
+        : [],
+    });
+  }
+
+  // Dismiss on its own after a while; the close button works any time.
+  useEffect(() => {
+    if (!popup) return;
+    const timer = setTimeout(() => setPopup(null), 8000);
+    return () => clearTimeout(timer);
+  }, [popup]);
+
   async function onUpdatePress() {
+    setPopup(null);
     if (!Updates.isEnabled) {
       setStatus("error");
       setMessage("Updates are disabled in development builds.");
+      showPopup("Updates are disabled in development builds.", false);
       return;
     }
     try {
@@ -126,20 +151,24 @@ export default function App() {
       if (!check.isAvailable) {
         setStatus("upToDate");
         setMessage("You're on the latest version.");
+        showPopup("You are using the latest version of the app.");
         return;
       }
       setStatus("downloading");
+      showPopup("A new update is available. Downloading…", false);
       const result = await Updates.fetchUpdateAsync();
       if (result.isNew) {
         await Updates.reloadAsync();
       } else {
         setStatus("upToDate");
         setMessage("You're on the latest version.");
+        showPopup("You are using the latest version of the app.");
       }
     } catch (e) {
       Observe.reportError(e);
       setStatus("error");
       setMessage(e?.message ?? String(e));
+      showPopup(`Could not check for updates: ${e?.message ?? String(e)}`, false);
     }
   }
 
@@ -213,6 +242,35 @@ export default function App() {
       >
         <Text style={styles.toastText}>{toast}</Text>
       </Animated.View>
+
+      {popup ? (
+        <View style={styles.popup}>
+          <View style={styles.popupHeader}>
+            <Text style={styles.popupTitle}>{popup.title}</Text>
+            <Pressable
+              onPress={() => setPopup(null)}
+              hitSlop={12}
+              accessibilityLabel="Close"
+            >
+              <Text style={styles.popupClose}>✕</Text>
+            </Pressable>
+          </View>
+          {popup.details.length > 0 ? (
+            <View style={styles.popupBody}>
+              <View style={styles.popupIcon}>
+                <Text style={styles.popupIconText}>i</Text>
+              </View>
+              <View style={styles.popupDetails}>
+                {popup.details.map((line) => (
+                  <Text key={line} style={styles.popupText}>
+                    {line}
+                  </Text>
+                ))}
+              </View>
+            </View>
+          ) : null}
+        </View>
+      ) : null}
 
       <StatusBar style="auto" />
     </View>
@@ -307,6 +365,64 @@ const styles = StyleSheet.create({
   },
   error: {
     color: "#c62828",
+  },
+  popup: {
+    position: "absolute",
+    bottom: 24,
+    left: 16,
+    right: 16,
+    backgroundColor: "#7a1c2b",
+    borderRadius: 14,
+    padding: 20,
+    elevation: 8,
+    shadowColor: "#000",
+    shadowOpacity: 0.25,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 4 },
+  },
+  popupHeader: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+  },
+  popupTitle: {
+    flex: 1,
+    color: "#fff",
+    fontSize: 17,
+    lineHeight: 24,
+    marginRight: 12,
+  },
+  popupClose: {
+    color: "#fff",
+    fontSize: 20,
+  },
+  popupBody: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    marginTop: 16,
+  },
+  popupIcon: {
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    borderWidth: 2,
+    borderColor: "#fff",
+    alignItems: "center",
+    justifyContent: "center",
+    marginRight: 14,
+    marginTop: 2,
+  },
+  popupIconText: {
+    color: "#fff",
+    fontSize: 14,
+    fontWeight: "700",
+  },
+  popupDetails: {
+    flex: 1,
+  },
+  popupText: {
+    color: "#fff",
+    fontSize: 16,
+    lineHeight: 24,
   },
   toast: {
     position: "absolute",
