@@ -3,6 +3,7 @@ import { StatusBar } from "expo-status-bar";
 import {
   ActivityIndicator,
   Animated,
+  AppState,
   Button,
   Pressable,
   StyleSheet,
@@ -17,17 +18,36 @@ import { Observe, useObserve } from "expo-observe";
 // expoConfig comes from the running update's manifest, so otaVersion reflects
 // the OTA release actually loaded (or the embedded one on first install).
 const appVersion = Constants.expoConfig?.version ?? "unknown";
-const otaVersion = Constants.expoConfig?.extra?.otaVersion ?? 0;
+
+// expo-updates extra params persist across launches without a native storage
+// module. Keys must be lowercase. Holds the id of an update that was downloaded
+// from this screen, so the next launch can tell it was applied.
+const DOWNLOADED_KEY = "downloaded-update-id";
+
+const PENDING_NOTICE =
+  "Update downloaded successfully. It will be applied on next app restart or user can reload manually.";
 
 export default function App() {
-  const { currentlyRunning, isUpdatePending, restartCount } =
-    Updates.useUpdates();
-  const [status, setStatus] = useState("idle"); // idle | checking | downloading | upToDate | error
+  const {
+    currentlyRunning,
+    isUpdatePending: nativeUpdatePending,
+    downloadedUpdate,
+  } = Updates.useUpdates();
+  // expo-updates keeps isUpdatePending true after a cold start that downloaded
+  // an update during startup and launched straight into it, so the flag alone
+  // reports an already running update as waiting. A downloaded update only
+  // counts as pending while it differs from the one running.
+  const isUpdatePending =
+    nativeUpdatePending &&
+    (!downloadedUpdate?.updateId ||
+      downloadedUpdate.updateId !== currentlyRunning.updateId);
+  const [status, setStatus] = useState("idle"); // idle | checking | downloading
   const [message, setMessage] = useState("");
   const [toast, setToast] = useState("");
   const toastOpacity = useRef(new Animated.Value(0)).current;
-  // Result popup of "Check for update": { title, details? } or null.
-  const [popup, setPopup] = useState(null);
+  // Id of an update found by "Check for update" that was not downloaded yet
+  // (the user chose LATER). Drives the "New Update Available" card.
+  const [availableId, setAvailableId] = useState(null);
 
   const { markInteractive } = useObserve();
   const [sending, setSending] = useState(false);
@@ -40,7 +60,7 @@ export default function App() {
     markInteractive();
     Observe.logEvent("app_opened", {
       attributes: {
-        otaVersion,
+        appVersion,
         source: currentlyRunning.isEmbeddedLaunch ? "embedded" : "ota",
       },
     });
@@ -48,27 +68,9 @@ export default function App() {
     Observe.dispatchEvents().catch((error) => Observe.reportError(error));
   }, []);
 
-  // Toast when this JS instance is the one that came up after reloading into a
-  // freshly downloaded update. restartCount is kept natively across the JS
-  // reload, so it is 0 on a plain cold start and 1+ only in the instance that
-  // the reload produced. Nothing is persisted and nothing depends on the code
-  // of the update being replaced, which a stored "last seen id" cannot avoid:
-  // the pre-reload instance still runs the *old* bundle, so any such marker is
-  // written by whatever logic shipped in the previous update.
-  const toastShown = useRef(false);
-  useEffect(() => {
-    console.log(
-      `[update-toast] restartCount=${restartCount} ota=${otaVersion} embedded=${currentlyRunning.isEmbeddedLaunch}`,
-    );
-    if (restartCount > 0 && !toastShown.current) {
-      toastShown.current = true;
-      showToast(`App updated to OTA ${otaVersion}`);
-    }
-  }, [restartCount]);
-
   // The toast view stays mounted (opacity 0 while hidden) so the fade never
   // starts on a view that has not been laid out yet.
-  function showToast(text) {
+  function showToast(text, holdMs = 4000) {
     setToast(text);
     Animated.sequence([
       Animated.timing(toastOpacity, {
@@ -76,7 +78,7 @@ export default function App() {
         duration: 250,
         useNativeDriver: false,
       }),
-      Animated.delay(4000),
+      Animated.delay(holdMs),
       Animated.timing(toastOpacity, {
         toValue: 0,
         duration: 400,
@@ -85,15 +87,53 @@ export default function App() {
     ]).start();
   }
 
-  // Safety net for the launch wait in app.config.js: when it ran out before
-  // the latest update arrived (slow network), the update keeps downloading in
-  // the background. Restart into it as soon as it is ready, so nobody stays on
-  // the UI bundled into an older APK.
+  // An update downloaded from this screen was applied by a reload or restart:
+  // say so once, then forget it. A stale id (neither running nor pending) is
+  // dropped too. expo-updates launches the newest downloaded update on a cold
+  // start, so a fully closed and reopened app lands here.
   useEffect(() => {
-    if (isUpdatePending) {
-      Updates.reloadAsync().catch((error) => Observe.reportError(error));
+    if (!Updates.isEnabled) return;
+    (async () => {
+      try {
+        const params = await Updates.getExtraParamsAsync();
+        const savedId = params[DOWNLOADED_KEY];
+        console.log(
+          `[update-toast] saved=${savedId} running=${currentlyRunning.updateId} pending=${isUpdatePending}`,
+        );
+        if (!savedId) return;
+        if (savedId === currentlyRunning.updateId) {
+          showToast(PENDING_NOTICE, 6000);
+          await Updates.setExtraParamAsync(DOWNLOADED_KEY, null);
+        } else if (!isUpdatePending) {
+          await Updates.setExtraParamAsync(DOWNLOADED_KEY, null);
+        }
+      } catch (error) {
+        Observe.reportError(error);
+      }
+    })();
+  }, []);
+
+  // A downloaded update that has not been applied yet is announced when it
+  // arrives in the background (slow launch) and each time the app comes back
+  // to the foreground. The dialog flow below announces its own downloads.
+  const ownDownload = useRef(false);
+  const pendingRef = useRef(false);
+  pendingRef.current = isUpdatePending;
+
+  useEffect(() => {
+    if (isUpdatePending && !ownDownload.current) {
+      showToast(PENDING_NOTICE, 6000);
     }
   }, [isUpdatePending]);
+
+  useEffect(() => {
+    const subscription = AppState.addEventListener("change", (state) => {
+      if (state === "active" && pendingRef.current) {
+        showToast(PENDING_NOTICE, 6000);
+      }
+    });
+    return () => subscription.remove();
+  }, []);
 
   // expo-observe sends on its own when the app goes to the background; this
   // sends right away, handy when checking the Events page.
@@ -111,64 +151,121 @@ export default function App() {
     }
   }
 
-  // The popup the update check ends in. Details describe what is running now.
-  function showPopup(title, withDetails = true) {
-    setPopup({
-      title,
-      details: withDetails
-        ? [
-            `Current version: ${appVersion} (OTA ${otaVersion})`,
-            `Runtime: ${currentlyRunning.runtimeVersion ?? "-"}`,
-            `Current update ID: ${currentlyRunning.updateId ?? "-"}`,
-          ]
-        : [],
-    });
+  function showLatestDialog() {
+    Alert.alert(
+      "You Are Using the Latest Version",
+      `Current version: ${appVersion}\n` +
+        `Runtime version: ${currentlyRunning.runtimeVersion ?? "-"}\n` +
+        `Current update ID: ${currentlyRunning.updateId ?? "-"}`,
+      [{ text: "OK" }],
+    );
   }
 
-  // Dismiss on its own after a while; the close button works any time.
-  useEffect(() => {
-    if (!popup) return;
-    const timer = setTimeout(() => setPopup(null), 8000);
-    return () => clearTimeout(timer);
-  }, [popup]);
+  function promptDownload(id) {
+    Alert.alert(
+      "Update Available",
+      `A new update is available.\nUpdate ID: ${id}\nWould you like to download it now?`,
+      [
+        { text: "Later", style: "cancel" },
+        { text: "Download", onPress: () => downloadUpdate(id) },
+      ],
+    );
+  }
+
+  function promptReload(id) {
+    Alert.alert(
+      "Update Downloaded",
+      `The update has been downloaded successfully!\nUpdate ID: ${id}\nWould you like to reload the app now to apply the update?`,
+      [
+        { text: "Later", style: "cancel" },
+        { text: "Reload Now", onPress: reloadNow },
+      ],
+    );
+  }
+
+  async function reloadNow() {
+    try {
+      await Updates.reloadAsync();
+    } catch (e) {
+      Observe.reportError(e);
+      Alert.alert("Reload Failed", e?.message ?? String(e), [{ text: "OK" }]);
+    }
+  }
+
+  async function downloadUpdate(knownId) {
+    ownDownload.current = true;
+    setStatus("downloading");
+    try {
+      const result = await Updates.fetchUpdateAsync();
+      setStatus("idle");
+      if (!result.isNew && !result.isRollBackToEmbedded) {
+        // Nothing new after all: another device or a republish changed it.
+        ownDownload.current = false;
+        setAvailableId(null);
+        showLatestDialog();
+        return;
+      }
+      const id = result.manifest?.id ?? knownId;
+      console.log(`[update-toast] downloaded id=${id} known=${knownId}`);
+      setAvailableId(null);
+      // Saved so a cold restart can report that the update was applied.
+      await Updates.setExtraParamAsync(DOWNLOADED_KEY, id).catch((error) =>
+        Observe.reportError(error),
+      );
+      Observe.logEvent("update_downloaded", { attributes: { updateId: id } });
+      Observe.dispatchEvents().catch((error) => Observe.reportError(error));
+      promptReload(id);
+    } catch (e) {
+      ownDownload.current = false;
+      Observe.reportError(e);
+      setStatus("idle");
+      Alert.alert("Download Failed", e?.message ?? String(e), [{ text: "OK" }]);
+    }
+  }
 
   async function onUpdatePress() {
-    setPopup(null);
     if (!Updates.isEnabled) {
-      setStatus("error");
-      setMessage("Updates are disabled in development builds.");
-      showPopup("Updates are disabled in development builds.", false);
+      Alert.alert(
+        "Updates Unavailable",
+        "Updates are disabled in development builds.",
+        [{ text: "OK" }],
+      );
       return;
     }
+    // Already downloaded: never offer the same update again.
+    if (isUpdatePending) {
+      showLatestDialog();
+      return;
+    }
+    setStatus("checking");
     try {
-      setStatus("checking");
-      setMessage("");
       const check = await Updates.checkForUpdateAsync();
       Observe.logEvent("update_checked", {
         attributes: { available: check.isAvailable },
       });
       Observe.dispatchEvents().catch((error) => Observe.reportError(error));
+      setStatus("idle");
       if (!check.isAvailable) {
-        setStatus("upToDate");
-        setMessage("You're on the latest version.");
-        showPopup("You are using the latest version of the app.");
+        setAvailableId(null);
+        showLatestDialog();
         return;
       }
-      setStatus("downloading");
-      showPopup("A new update is available. Downloading…", false);
-      const result = await Updates.fetchUpdateAsync();
-      if (result.isNew) {
-        await Updates.reloadAsync();
-      } else {
-        setStatus("upToDate");
-        setMessage("You're on the latest version.");
-        showPopup("You are using the latest version of the app.");
+      const id = check.manifest?.id ?? "rollback to embedded update";
+      setAvailableId(id);
+      // Remembered so that if LATER is chosen and the next launch downloads and
+      // applies this update, that launch can announce it too.
+      if (check.manifest?.id) {
+        Updates.setExtraParamAsync(DOWNLOADED_KEY, id).catch((error) =>
+          Observe.reportError(error),
+        );
       }
+      promptDownload(id);
     } catch (e) {
       Observe.reportError(e);
-      setStatus("error");
-      setMessage(e?.message ?? String(e));
-      showPopup(`Could not check for updates: ${e?.message ?? String(e)}`, false);
+      setStatus("idle");
+      Alert.alert("Update Check Failed", e?.message ?? String(e), [
+        { text: "OK" },
+      ]);
     }
   }
 
@@ -180,12 +277,10 @@ export default function App() {
 
   return (
     <View style={styles.container}>
-      <Text style={styles.title}>OTA TEST 24</Text>
+      <Text style={styles.title}>OTAA TEST 42</Text>
 
       <View style={styles.card}>
-        <Text style={styles.version}>
-          v{appVersion} (OTA {otaVersion})
-        </Text>
+        <Text style={styles.version}>v{appVersion}</Text>
         <Button
           title="Send telemetry now"
           onPress={() => Alert.alert("Telemetry sent!")}
@@ -197,6 +292,49 @@ export default function App() {
         <Row label="Published" value={publishedAt} />
       </View>
 
+      {isUpdatePending ? (
+        <View style={styles.card}>
+          <Text style={styles.cardTitle}>Update Downloaded</Text>
+          <Text style={styles.cardSubtitle}>
+            {downloadedUpdate?.updateId
+              ? `Update ID: ${downloadedUpdate.updateId}\n`
+              : ""}
+            Reload the app to apply the update.
+          </Text>
+          <Pressable
+            style={({ pressed }) => [
+              styles.button,
+              pressed && styles.buttonDim,
+            ]}
+            onPress={reloadNow}
+          >
+            <Text style={styles.buttonText}>Reload Now</Text>
+          </Pressable>
+        </View>
+      ) : availableId ? (
+        <View style={styles.card}>
+          <Text style={styles.cardTitle}>New Update Available</Text>
+          <Text style={styles.cardSubtitle}>New update available</Text>
+          <Pressable
+            style={({ pressed }) => [
+              styles.button,
+              (pressed || busy) && styles.buttonDim,
+            ]}
+            onPress={() => downloadUpdate(availableId)}
+            disabled={busy}
+          >
+            {status === "downloading" ? (
+              <View style={styles.buttonRow}>
+                <ActivityIndicator color="#fff" />
+                <Text style={styles.buttonText}> Downloading…</Text>
+              </View>
+            ) : (
+              <Text style={styles.buttonText}>Download Update</Text>
+            )}
+          </Pressable>
+        </View>
+      ) : null}
+
       <Pressable
         style={({ pressed }) => [
           styles.button,
@@ -205,36 +343,17 @@ export default function App() {
         onPress={onUpdatePress}
         disabled={busy}
       >
-        {busy ? (
+        {status === "checking" ? (
           <View style={styles.buttonRow}>
             <ActivityIndicator color="#fff" />
-            <Text style={styles.buttonText}>
-              {status === "checking" ? "  Checking…" : "  Downloading…"}
-            </Text>
+            <Text style={styles.buttonText}> Checking…</Text>
           </View>
         ) : (
           <Text style={styles.buttonText}>Check for update</Text>
         )}
       </Pressable>
 
-      <Pressable
-        style={({ pressed }) => [
-          styles.secondaryButton,
-          (pressed || sending) && styles.buttonDim,
-        ]}
-        onPress={onSendPress}
-        disabled={sending}
-      >
-        <Text style={styles.secondaryButtonText}>
-          {sending ? "Sending…" : "Send telemetry now"}
-        </Text>
-      </Pressable>
-
-      {message ? (
-        <Text style={[styles.message, status === "error" && styles.error]}>
-          {message}
-        </Text>
-      ) : null}
+      {message ? <Text style={styles.message}>{message}</Text> : null}
 
       <Animated.View
         pointerEvents="none"
@@ -242,35 +361,6 @@ export default function App() {
       >
         <Text style={styles.toastText}>{toast}</Text>
       </Animated.View>
-
-      {popup ? (
-        <View style={styles.popup}>
-          <View style={styles.popupHeader}>
-            <Text style={styles.popupTitle}>{popup.title}</Text>
-            <Pressable
-              onPress={() => setPopup(null)}
-              hitSlop={12}
-              accessibilityLabel="Close"
-            >
-              <Text style={styles.popupClose}>✕</Text>
-            </Pressable>
-          </View>
-          {popup.details.length > 0 ? (
-            <View style={styles.popupBody}>
-              <View style={styles.popupIcon}>
-                <Text style={styles.popupIconText}>i</Text>
-              </View>
-              <View style={styles.popupDetails}>
-                {popup.details.map((line) => (
-                  <Text key={line} style={styles.popupText}>
-                    {line}
-                  </Text>
-                ))}
-              </View>
-            </View>
-          ) : null}
-        </View>
-      ) : null}
 
       <StatusBar style="auto" />
     </View>
@@ -306,6 +396,17 @@ const styles = StyleSheet.create({
     padding: 16,
     marginBottom: 24,
   },
+  cardTitle: {
+    fontSize: 17,
+    fontWeight: "600",
+    textAlign: "center",
+  },
+  cardSubtitle: {
+    color: "#666",
+    textAlign: "center",
+    marginTop: 4,
+    marginBottom: 14,
+  },
   version: {
     fontSize: 18,
     fontWeight: "600",
@@ -329,6 +430,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 28,
     borderRadius: 10,
     minWidth: 220,
+    alignSelf: "center",
     alignItems: "center",
   },
   buttonDim: {
@@ -363,67 +465,6 @@ const styles = StyleSheet.create({
     color: "#333",
     textAlign: "center",
   },
-  error: {
-    color: "#c62828",
-  },
-  popup: {
-    position: "absolute",
-    bottom: 24,
-    left: 16,
-    right: 16,
-    backgroundColor: "#7a1c2b",
-    borderRadius: 14,
-    padding: 20,
-    elevation: 8,
-    shadowColor: "#000",
-    shadowOpacity: 0.25,
-    shadowRadius: 8,
-    shadowOffset: { width: 0, height: 4 },
-  },
-  popupHeader: {
-    flexDirection: "row",
-    alignItems: "flex-start",
-  },
-  popupTitle: {
-    flex: 1,
-    color: "#fff",
-    fontSize: 17,
-    lineHeight: 24,
-    marginRight: 12,
-  },
-  popupClose: {
-    color: "#fff",
-    fontSize: 20,
-  },
-  popupBody: {
-    flexDirection: "row",
-    alignItems: "flex-start",
-    marginTop: 16,
-  },
-  popupIcon: {
-    width: 26,
-    height: 26,
-    borderRadius: 13,
-    borderWidth: 2,
-    borderColor: "#fff",
-    alignItems: "center",
-    justifyContent: "center",
-    marginRight: 14,
-    marginTop: 2,
-  },
-  popupIconText: {
-    color: "#fff",
-    fontSize: 14,
-    fontWeight: "700",
-  },
-  popupDetails: {
-    flex: 1,
-  },
-  popupText: {
-    color: "#fff",
-    fontSize: 16,
-    lineHeight: 24,
-  },
   toast: {
     position: "absolute",
     bottom: 60,
@@ -439,5 +480,6 @@ const styles = StyleSheet.create({
     color: "#fff",
     fontSize: 15,
     fontWeight: "500",
+    textAlign: "center",
   },
 });
