@@ -4,9 +4,9 @@ const APP_ID = "6675c329-1085-458f-8ed5-3e3ee3791681";
 
 export default ({ config }) => ({
   ...config,
-  // 1.1.0: expo-observe added native code, so updates built from here on
-  // must never reach a 1.0.0 binary, which lacks it and would crash on launch.
-  runtimeVersion: "1.1.0",
+  // 1.2.0: React Navigation and AsyncStorage added native code (1.1.0: expo-observe), so updates built from here on
+  // must never reach an older binary, which lacks it and would crash on launch.
+  runtimeVersion: "1.2.0",
   extra: {
     ...config.extra,
     // Bump before every `eoas publish` so the running OTA release is identifiable in the app.
