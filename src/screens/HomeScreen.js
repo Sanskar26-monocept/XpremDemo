@@ -12,7 +12,9 @@ export default function HomeScreen({ navigation }) {
 
   return (
     <ScrollView contentContainerStyle={styles.content}>
-      <Text style={styles.greeting}>Hello, {user.name.split(" ")[0]}</Text>
+      <Text style={styles.greeting}>
+        Good Afternoon, {user.name.split(" ")[0]}
+      </Text>
 
       <View style={styles.balanceCard}>
         <Text style={styles.balanceLabel}>Available balance</Text>
@@ -42,10 +44,14 @@ export default function HomeScreen({ navigation }) {
           <TransactionRow
             key={tx.id}
             tx={tx}
-            onPress={() => navigation.navigate("TransactionDetail", { id: tx.id })}
+            onPress={() =>
+              navigation.navigate("TransactionDetail", { id: tx.id })
+            }
           />
         ))}
-        {recent.length === 0 ? <Text style={styles.empty}>No transactions yet.</Text> : null}
+        {recent.length === 0 ? (
+          <Text style={styles.empty}>No transactions yet.</Text>
+        ) : null}
       </View>
     </ScrollView>
   );
@@ -53,7 +59,12 @@ export default function HomeScreen({ navigation }) {
 
 const styles = StyleSheet.create({
   content: { padding: spacing.md, paddingBottom: spacing.xl },
-  greeting: { fontSize: 22, fontWeight: "700", color: colors.text, marginBottom: spacing.md },
+  greeting: {
+    fontSize: 22,
+    fontWeight: "700",
+    color: colors.text,
+    marginBottom: spacing.md,
+  },
   balanceCard: {
     backgroundColor: colors.accent,
     borderRadius: 16,
@@ -61,7 +72,12 @@ const styles = StyleSheet.create({
     marginBottom: spacing.md,
   },
   balanceLabel: { color: "#dbe6ff", fontSize: 14 },
-  balance: { color: "#fff", fontSize: 36, fontWeight: "700", marginVertical: 6 },
+  balance: {
+    color: "#fff",
+    fontSize: 36,
+    fontWeight: "700",
+    marginVertical: 6,
+  },
   account: { color: "#dbe6ff", fontSize: 14 },
   actions: { flexDirection: "row", gap: 12, marginBottom: spacing.lg },
   action: { flex: 1, paddingHorizontal: 8 },
