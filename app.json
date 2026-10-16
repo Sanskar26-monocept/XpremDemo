@@ -2,7 +2,7 @@
   "expo": {
     "name": "ReleaseX",
     "slug": "XpremDemo",
-    "version": "1.0.3",
+    "version": "1.0.4",
     "android": {
       "package": "com.sanskar_26.XpremDemo"
     }

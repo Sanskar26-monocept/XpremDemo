@@ -12,9 +12,7 @@ export default function HomeScreen({ navigation }) {
 
   return (
     <ScrollView contentContainerStyle={styles.content}>
-      <Text style={styles.greeting}>
-        Good Afternoon, {user.name.split(" ")[0]}
-      </Text>
+      <Text style={styles.greeting}>A, {user.name.split(" ")[0]}</Text>
 
       <View style={styles.balanceCard}>
         <Text style={styles.balanceLabel}>Available balance</Text>
