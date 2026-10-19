@@ -1,4 +1,4 @@
-const SERVER_URL = "http://13.207.184.23:3000";
+const SERVER_URL = "http://15.252.153.184";
 // The app's id on the xprem server, which expo-observe also sends as its project id.
 const APP_ID = "6675c329-1085-458f-8ed5-3e3ee3791681";
 
